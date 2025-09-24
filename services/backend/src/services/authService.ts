@@ -42,14 +42,21 @@ class AuthService {
     });
     const link = `${process.env.FRONTEND_URL}/activate-user?token=${invite_token}&username=${user.username}`;
    
+    // Arreglo de template con ejs
     const template = `
       <html>
         <body>
-          <h1>Hello ${user.first_name} ${user.last_name}</h1>
-          <p>Click <a href="${ link }">here</a> to activate your account.</p>
+          <h1>Hello <%- firstName %> <%- lastName %></h1>
+          <p>Click <a href="<%- activationLink %>">here</a> to activate your account.</p>
         </body>
       </html>`;
-    const htmlBody = ejs.render(template);
+    
+    // Renderizado del template con ejs (template command injection)
+    const htmlBody = ejs.render(template, {
+      firstName: user.first_name,
+      lastName: user.last_name,
+      activationLink: link
+    });
     
     await transporter.sendMail({
       from: "info@example.com",
