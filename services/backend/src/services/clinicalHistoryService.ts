@@ -120,6 +120,13 @@ class ClinicalHistoryService {
   }
 
   static async deleteFile(userId: string, historyId: string, filename: string) {
+    // --- Path Traversal Prevention ---
+    // Solo permitimos nombres de archivo válidos: sin ../ ni /
+    // Así evitamos que un atacante acceda a archivos fuera de la carpeta permitida
+    if (!/^[a-zA-Z0-9_.-]+$/.test(filename)) {
+      throw new Error('Invalid filename');
+    }
+    // --- END Path Traversal Prevention ---
     const h = await db('clinical_histories')
       .where({ id: historyId, user_id: userId })
       .first();

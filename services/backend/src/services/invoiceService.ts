@@ -14,17 +14,23 @@ interface InvoiceRow {
 }
 
 class InvoiceService {
-  static async list( userId: string, status?: string, operator?: string): Promise<Invoice[]> {
-    let q = db<InvoiceRow>('invoices').where({ userId: userId });
-    if (status) q = q.andWhereRaw(" status "+ operator + " '"+ status +"'");
+  static async list(userId: string, status?: string, operator?: string): Promise<Invoice[]> {
+    let q = db<InvoiceRow>('invoices').where({ userId });
+    // Solo permitir operadores seguros para evitar el uso de SQL dinamico
+    const allowedOperators = ['=', '!=', '<', '>', '<=', '>='];
+    if (status && operator && allowedOperators.includes(operator)) {
+      q = q.andWhere('status', operator as any, status);
+    } else if (status) {
+      q = q.andWhere({ status });
+    }
     const rows = await q.select();
     const invoices = rows.map(row => ({
       id: row.id,
       userId: row.userId,
       amount: row.amount,
       dueDate: row.dueDate,
-      status: row.status} as Invoice
-    ));
+      status: row.status
+    } as Invoice));
     return invoices;
   }
 
@@ -36,9 +42,18 @@ class InvoiceService {
     ccv: string,
     expirationDate: string
   ) {
-    // use axios to call http://paymentBrand/payments as a POST request
-    // with the body containing ccNumber, ccv, expirationDate
-    // and handle the response accordingly
+    // Validar paymentBrand para evitar SSRF
+    // Solo se permite 'visa' o 'master', nunca valores arbitrarios
+    // --- SSRF Prevention ---
+    // Validamos que paymentBrand solo pueda ser 'visa' o 'master'.
+    // Esto evita que un atacante use un dominio arbitrario y fuerce al backend a hacer requests peligrosos.
+    // Si se agregan más marcas, deben ser incluidas explícitamente en allowedBrands.
+    const allowedBrands = ['visa', 'master'];
+    if (!allowedBrands.includes(paymentBrand)) {
+      throw new Error('Invalid payment brand');
+    }
+    // --- END SSRF Prevention ---
+    // Si se necesita agregar más marcas, hacerlo aquí y nunca desde la request directamente
     const paymentResponse = await axios.post(`http://${paymentBrand}/payments`, {
       ccNumber,
       ccv,
@@ -51,8 +66,8 @@ class InvoiceService {
     // Update the invoice status in the database
     await db('invoices')
       .where({ id: invoiceId, userId })
-      .update({ status: 'paid' });  
-    };
+      .update({ status: 'paid' });
+  }
   static async  getInvoice( invoiceId:string): Promise<Invoice> {
     const invoice = await db<InvoiceRow>('invoices').where({ id: invoiceId }).first();
     if (!invoice) {
@@ -71,6 +86,12 @@ class InvoiceService {
     if (!invoice) {
       throw new Error('Invoice not found');
     }
+    // --- Path Traversal Prevention ---
+    // Solo permitimos nombres de archivo válidos: sin ../ ni /
+    // Así evitamos que un atacante acceda a archivos fuera de /invoices
+    if (!/^[a-zA-Z0-9_.-]+\.pdf$/.test(pdfName)) {
+      throw new Error('Invalid PDF name');
+    }
     try {
       const filePath = `/invoices/${pdfName}`;
       const content = await fs.readFile(filePath, 'utf-8');
@@ -79,8 +100,8 @@ class InvoiceService {
       // send the error to the standard output
       console.error('Error reading receipt file:', error);
       throw new Error('Receipt not found');
-
-    } 
+    }
+    // --- END Path Traversal Prevention ---
 
   };
 

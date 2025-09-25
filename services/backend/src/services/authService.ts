@@ -20,10 +20,13 @@ class AuthService {
     // create invite token
     const invite_token = crypto.randomBytes(6).toString('hex');
     const invite_token_expires = new Date(Date.now() + INVITE_TTL);
+    // Hashear la contraseña antes de guardar
+    const bcrypt = await import('bcrypt');
+    const hash = await bcrypt.hash(user.password, 12);
     await db<UserRow>('users')
       .insert({
         username: user.username,
-        password: user.password,
+        password: hash,
         email: user.email,
         first_name: user.first_name,
         last_name:  user.last_name,
@@ -42,21 +45,24 @@ class AuthService {
     });
     const link = `${process.env.FRONTEND_URL}/activate-user?token=${invite_token}&username=${user.username}`;
    
-    // Arreglo de template con ejs
+    // --- Template Command Injection Prevention ---
+    // Sanitizamos los datos antes de renderizar el template con ejs
+    // Usamos ejs.escapeXML para evitar inyección de comandos en plantillas
     const template = `
       <html>
         <body>
-          <h1>Hello <%- firstName %> <%- lastName %></h1>
-          <p>Click <a href="<%- activationLink %>">here</a> to activate your account.</p>
+          <h1>Hello <%- ejs.escapeXML(firstName) %> <%- ejs.escapeXML(lastName) %></h1>
+          <p>Click <a href="<%- ejs.escapeXML(activationLink) %>">here</a> to activate your account.</p>
         </body>
       </html>`;
-    
-    // Renderizado del template con ejs (template command injection)
+
     const htmlBody = ejs.render(template, {
       firstName: user.first_name,
       lastName: user.last_name,
-      activationLink: link
+      activationLink: link,
+      ejs // Pasamos ejs para poder usar escapeXML en el template
     });
+    
     
     await transporter.sendMail({
       from: "info@example.com",
@@ -71,15 +77,23 @@ class AuthService {
       .where({ id: user.id })
       .first();
     if (!existing) throw new Error('User not found');
+    // --- Secure Password Storage ---
+    // Hasheamos la contraseña antes de guardar
+    let hashedPassword = user.password;
+    if (user.password) {
+      const bcrypt = await import('bcrypt');
+      hashedPassword = await bcrypt.hash(user.password, 12);
+    }
     await db<UserRow>('users')
       .where({ id: user.id })
       .update({
         username: user.username,
-        password: user.password,
+        password: hashedPassword,
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name
       });
+    // --- END Secure Password Storage ---
     return existing;
   }
 
@@ -135,13 +149,18 @@ class AuthService {
       .first();
     if (!row) throw new Error('Invalid or expired reset token');
 
+    // --- Secure Password Storage ---
+    // Hasheamos la contraseña antes de guardar
+    const bcrypt = await import('bcrypt');
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
     await db('users')
       .where({ id: row.id })
       .update({
-        password: newPassword,
+        password: hashedPassword,
         reset_password_token: null,
         reset_password_expires: null
       });
+    // --- END Secure Password Storage ---
   }
 
   static async setPassword(token: string, newPassword: string) {
@@ -151,13 +170,18 @@ class AuthService {
       .first();
     if (!row) throw new Error('Invalid or expired invite token');
 
+    // --- Secure Password Storage ---
+    // Hasheamos la contraseña antes de guardar
+    const bcrypt = await import('bcrypt');
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
     await db('users')
       .update({
-        password: newPassword,
+        password: hashedPassword,
         invite_token: null,
         invite_token_expires: null
       })
       .where({ id: row.id });
+    // --- END Secure Password Storage ---
   }
 
   static generateJwt(userId: string): string {

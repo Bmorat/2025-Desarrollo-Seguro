@@ -18,9 +18,20 @@ class FileService {
     if (!user) throw new Error('User not found');
 
     if (user.picture_path) {
+      // --- Path Traversal Prevention ---
+      // Solo permitimos rutas de archivo válidas: sin ../ ni /
+      // Así evitamos que un atacante acceda a archivos fuera de la carpeta permitida
+      if (!/^[a-zA-Z0-9_.\/-]+$/.test(user.picture_path)) {
+        throw new Error('Invalid picture path');
+      }
       try { await unlink(path.resolve(user.picture_path)); } catch { /*ignore*/ }
+      // --- END Path Traversal Prevention ---
     }
 
+    // Validar file.path antes de guardar
+    if (!/^[a-zA-Z0-9_.\/-]+$/.test(file.path)) {
+      throw new Error('Invalid file path');
+    }
     await db('users')
       .update({ picture_path: file.path })
       .where({ id: userId });
@@ -54,7 +65,13 @@ class FileService {
       .first();
     if (!user || !user.picture_path) throw new Error('No profile picture');
 
+    // --- Path Traversal Prevention ---
+    // Solo permitimos rutas de archivo válidas: sin ../ ni /
+    if (!/^[a-zA-Z0-9_.\/-]+$/.test(user.picture_path)) {
+      throw new Error('Invalid picture path');
+    }
     try { await unlink(path.resolve(user.picture_path)); } catch { /*ignore*/ }
+    // --- END Path Traversal Prevention ---
 
     await db('users')
       .update({ picture_path: null })

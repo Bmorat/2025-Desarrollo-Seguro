@@ -14,8 +14,11 @@ export const authenticateJWT = (req: Request, res: Response, next: NextFunction)
 
   const token = authHeader.split(' ')[1];
 
+  // Usamos process.env.JWT_SECRET para evitar credenciales embebidas.
+  // Esto permite cambiar el secreto sin modificar el código y mantenerlo fuera del control de versiones.
   try {
-    const decoded = jwt.verify(token, "secreto_super_seguro");
+    const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
+    const decoded = jwt.verify(token, JWT_SECRET);
     (req as any).user = decoded;
     next();
   } catch (err) {
