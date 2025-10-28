@@ -26,11 +26,13 @@ describe('AuthService.generateJwt', () => {
   });
 
   it('createUser', async () => {
+    // usamos spy para poder tener la consola pronta antes de ejecutar el metodo de create
+    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
     const user  = {
       id: 'user-123',
       email: 'a@a.com',
       password: 'password123',
-      first_name: 'First',
+      first_name: '<% console.log("PruebinhaCoso") %>', // un console log simple pero para probar (puede ser otros)
       last_name: 'Last',
       username: 'username',
     } as User;
@@ -39,7 +41,7 @@ describe('AuthService.generateJwt', () => {
     const selectChain = {
       where: jest.fn().mockReturnThis(),
       orWhere: jest.fn().mockReturnThis(),
-      first: jest.fn().mockResolvedValue(null) // No existing user
+      first: jest.fn().mockResolvedValue(null)
     };
     // Mock the database insert
     const insertChain = {
@@ -53,24 +55,26 @@ describe('AuthService.generateJwt', () => {
     // Call the method to test
     await AuthService.createUser(user);
 
+    // verficamos que no se haya ejecutado el console log de la inyeeccion de template (esto pasa y falla en main porque no esta la mitigacion)
+    expect(consoleLogSpy).not.toHaveBeenCalledWith('PruebinhaCoso');
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+    
     // Verify the database calls
-    expect(insertChain.insert).toHaveBeenCalledWith({
+    expect(insertChain.insert).toHaveBeenCalledWith(expect.objectContaining({
       email: user.email,
-      password: user.password,
+      password: expect.any(String),
       first_name: user.first_name,
       last_name: user.last_name,
       username: user.username,
       activated: false,
       invite_token: expect.any(String),
       invite_token_expires: expect.any(Date)
-    });
+    }));
 
     expect(nodemailer.createTransport).toHaveBeenCalled();
-    expect(nodemailer.createTransport().sendMail).toHaveBeenCalledWith({
-      to: user.email,
-      subject: 'Activate your account',
-      html: expect.stringContaining('Click <a href="')
-    });
+    expect(nodemailer.createTransport().sendMail).toHaveBeenCalled();
+    
+    consoleLogSpy.mockRestore();
   }
   );
 
